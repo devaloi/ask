@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/devaloi/ask/internal/config"
+	"github.com/devaloi/ask/internal/history"
 	"github.com/devaloi/ask/internal/provider"
 	"github.com/devaloi/ask/internal/stream"
 )
@@ -25,11 +28,11 @@ func runChat(cmd *cobra.Command, args []string) error {
 	// If no arguments and stdin is a terminal, enter interactive mode
 	stdinIsTerminal := term.IsTerminal(int(os.Stdin.Fd()))
 
-	if len(args) == 0 && stdinIsTerminal {
+	if len(args) == 0 && stdinIsTerminal && continueFlag == 0 {
 		return runInteractive()
 	}
 
-	// One-shot mode
+	// One-shot mode (or continue mode)
 	return runOneShot(args)
 }
 
@@ -42,7 +45,7 @@ func runOneShot(args []string) error {
 		return err
 	}
 
-	if strings.TrimSpace(prompt) == "" {
+	if strings.TrimSpace(prompt) == "" && continueFlag == 0 {
 		return fmt.Errorf("no prompt provided\n\nUsage: ask \"your question\"\n       cat file | ask \"explain this\"")
 	}
 
@@ -59,12 +62,41 @@ func runOneShot(args []string) error {
 		return err
 	}
 
-	// Build messages
-	messages := []provider.Message{}
-	if systemPrompt != "" {
+	// Build messages - either new or from continued conversation
+	var messages []provider.Message
+	var conv *history.Conversation
+
+	if continueFlag > 0 {
+		// Load previous conversation
+		store, err := openStore()
+		if err != nil {
+			return err
+		}
+		defer store.Close()
+
+		conv, err = store.GetConversation(continueFlag)
+		if err != nil {
+			return err
+		}
+
+		// Convert history messages to provider messages
+		for _, msg := range conv.Messages {
+			messages = append(messages, provider.Message{
+				Role:    msg.Role,
+				Content: msg.Content,
+			})
+		}
+	}
+
+	// Add system prompt if starting fresh
+	if systemPrompt != "" && continueFlag == 0 {
 		messages = append(messages, provider.Message{Role: "system", Content: systemPrompt})
 	}
-	messages = append(messages, provider.Message{Role: "user", Content: prompt})
+
+	// Add user message if provided
+	if strings.TrimSpace(prompt) != "" {
+		messages = append(messages, provider.Message{Role: "user", Content: prompt})
+	}
 
 	// Create request
 	req := &provider.ChatRequest{
@@ -85,8 +117,10 @@ func runOneShot(args []string) error {
 		errCh <- p.Chat(ctx, req, tokens)
 	}()
 
-	// Read and write tokens
+	// Read and write tokens, collect response
+	var response strings.Builder
 	for token := range tokens {
+		response.WriteString(token)
 		if err := writer.Write(token); err != nil {
 			return fmt.Errorf("failed to write output: %w", err)
 		}
@@ -98,7 +132,73 @@ func runOneShot(args []string) error {
 		return err
 	}
 
+	// Save to history if TTY (don't save when piped)
+	if stdoutIsTerminal && strings.TrimSpace(prompt) != "" {
+		if err := saveToHistory(p.Name(), getModel(), messages, response.String(), conv); err != nil {
+			// Don't fail the command, just warn about history
+			fmt.Fprintf(os.Stderr, "Warning: failed to save to history: %v\n", err)
+		}
+	}
+
 	return nil
+}
+
+func saveToHistory(providerName, model string, messages []provider.Message, response string, existingConv *history.Conversation) error {
+	store, err := openStore()
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	conv := existingConv
+	if conv == nil {
+		conv = &history.Conversation{
+			Model:    model,
+			Provider: providerName,
+		}
+	}
+
+	// Add the new messages
+	var newMessages []history.Message
+
+	// If this is a new conversation, add all messages
+	if existingConv == nil {
+		for _, msg := range messages {
+			newMessages = append(newMessages, history.Message{
+				Role:    msg.Role,
+				Content: msg.Content,
+			})
+		}
+	} else {
+		// Just add the last user message
+		if len(messages) > 0 {
+			lastMsg := messages[len(messages)-1]
+			newMessages = append(newMessages, history.Message{
+				Role:    lastMsg.Role,
+				Content: lastMsg.Content,
+			})
+		}
+	}
+
+	// Add assistant response
+	newMessages = append(newMessages, history.Message{
+		Role:    "assistant",
+		Content: response,
+	})
+
+	conv.Messages = newMessages
+	_, err = store.SaveConversation(conv)
+	return err
+}
+
+func openStore() (*history.Store, error) {
+	dataDir, err := config.GetDataDir()
+	if err != nil {
+		return nil, err
+	}
+
+	dbPath := filepath.Join(dataDir, "history.db")
+	return history.NewStore(dbPath)
 }
 
 func buildPrompt(args []string) (string, error) {
@@ -171,6 +271,9 @@ func runInteractive() error {
 	reader := bufio.NewReader(os.Stdin)
 	writer := stream.NewWriter(os.Stdout, true)
 
+	// Track conversation for history
+	var conv *history.Conversation
+
 	for {
 		fmt.Print("> ")
 		input, err := reader.ReadString('\n')
@@ -195,6 +298,7 @@ func runInteractive() error {
 				return nil
 			case cmd == "/new" || cmd == "/clear":
 				messages = messages[:0]
+				conv = nil
 				if systemPrompt != "" {
 					messages = append(messages, provider.Message{Role: "system", Content: systemPrompt})
 				}
@@ -252,7 +356,27 @@ func runInteractive() error {
 		}
 
 		// Add assistant response to history
-		messages = append(messages, provider.Message{Role: "assistant", Content: response.String()})
+		responseContent := response.String()
+		messages = append(messages, provider.Message{Role: "assistant", Content: responseContent})
+
+		// Save to history
+		if conv == nil {
+			conv = &history.Conversation{
+				Model:    getModel(),
+				Provider: p.Name(),
+			}
+		}
+		conv.Messages = []history.Message{
+			{Role: "user", Content: input},
+			{Role: "assistant", Content: responseContent},
+		}
+
+		if store, err := openStore(); err == nil {
+			if id, err := store.SaveConversation(conv); err == nil && conv.ID == 0 {
+				conv.ID = id
+			}
+			store.Close()
+		}
 	}
 }
 

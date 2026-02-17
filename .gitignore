@@ -40,3 +40,6 @@ build/
 
 # History database (user data)
 history.db
+
+# Docs folder (project specs, not for distribution)
+docs/
