@@ -11,19 +11,30 @@ import (
 	"strings"
 )
 
-const openAIBaseURL = "https://api.openai.com/v1/chat/completions"
+const defaultOpenAIBaseURL = "https://api.openai.com/v1/chat/completions"
 
 // OpenAI implements the Provider interface for OpenAI's API.
 type OpenAI struct {
-	apiKey string
-	client *http.Client
+	apiKey  string
+	client  *http.Client
+	baseURL string
 }
 
 // NewOpenAI creates a new OpenAI provider with the given API key.
 func NewOpenAI(apiKey string) *OpenAI {
 	return &OpenAI{
-		apiKey: apiKey,
-		client: &http.Client{},
+		apiKey:  apiKey,
+		client:  &http.Client{},
+		baseURL: defaultOpenAIBaseURL,
+	}
+}
+
+// NewOpenAIWithBaseURL creates a new OpenAI provider with a custom base URL (for testing).
+func NewOpenAIWithBaseURL(apiKey, baseURL string) *OpenAI {
+	return &OpenAI{
+		apiKey:  apiKey,
+		client:  &http.Client{},
+		baseURL: baseURL,
 	}
 }
 
@@ -80,7 +91,7 @@ func (o *OpenAI) Chat(ctx context.Context, req *ChatRequest, stream chan<- strin
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, openAIBaseURL, bytes.NewReader(jsonBody))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, o.baseURL, bytes.NewReader(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
