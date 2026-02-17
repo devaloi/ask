@@ -2,7 +2,8 @@
 
 # Build the binary
 build:
-	go build -o ask .
+	@mkdir -p bin
+	go build -o bin/ask .
 
 # Run the application
 run:
@@ -29,7 +30,7 @@ fmt:
 
 # Clean build artifacts
 clean:
-	rm -f ask coverage.out coverage.html
+	rm -rf bin coverage.out coverage.html
 
 # Install the binary
 install:

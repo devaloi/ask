@@ -1,5 +1,6 @@
 # Binaries
 ask
+bin/
 *.exe
 *.exe~
 *.dll
