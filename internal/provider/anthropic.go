@@ -1,14 +1,14 @@
 package provider
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+
+	"github.com/devaloi/ask/internal/sse"
 )
 
 const (
@@ -89,10 +89,7 @@ func (a *Anthropic) Chat(ctx context.Context, req *ChatRequest, stream chan<- st
 			}
 			systemPrompt += msg.Content
 		} else {
-			messages = append(messages, anthropicMessage{
-				Role:    msg.Role,
-				Content: msg.Content,
-			})
+			messages = append(messages, anthropicMessage(msg))
 		}
 	}
 
@@ -155,12 +152,12 @@ func (a *Anthropic) Chat(ctx context.Context, req *ChatRequest, stream chan<- st
 func (a *Anthropic) handleHTTPError(resp *http.Response) error {
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
-		return fmt.Errorf("Invalid API key. Check your ANTHROPIC_API_KEY.")
+		return fmt.Errorf("invalid API key: check your ANTHROPIC_API_KEY")
 	case http.StatusTooManyRequests:
-		return fmt.Errorf("Rate limited. Please wait and try again.")
+		return fmt.Errorf("rate limited: please wait and try again")
 	default:
 		if resp.StatusCode >= 500 {
-			return fmt.Errorf("Anthropic service error. Please try again later.")
+			return fmt.Errorf("Anthropic service error: please try again later")
 		}
 		// Read error body for other errors
 		body, _ := io.ReadAll(resp.Body)
@@ -170,72 +167,47 @@ func (a *Anthropic) handleHTTPError(resp *http.Response) error {
 
 // parseSSEStream parses the SSE stream from the Anthropic API and sends tokens to the channel.
 func (a *Anthropic) parseSSEStream(ctx context.Context, body io.Reader, stream chan<- string) error {
-	scanner := bufio.NewScanner(body)
+	reader := sse.NewReader(ctx, body)
+	events := make(chan sse.Event, 100)
 
-	var eventType string
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- reader.Read(events)
+		close(events)
+	}()
 
-	for scanner.Scan() {
-		// Check for context cancellation
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+	for event := range events {
+		// Handle message_stop event
+		if event.Type == "message_stop" {
+			return nil
 		}
 
-		line := scanner.Text()
-
-		// Parse event type
-		if strings.HasPrefix(line, "event: ") {
-			eventType = strings.TrimPrefix(line, "event: ")
+		// Only process content_block_delta events
+		if event.Type != "content_block_delta" {
 			continue
 		}
 
-		// Parse data line
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
+		var sseEvent anthropicSSEEvent
+		if err := json.Unmarshal([]byte(event.Data), &sseEvent); err != nil {
+			continue // Skip malformed JSON
+		}
 
-			// Handle message_stop event
-			if eventType == "message_stop" {
-				return nil
+		// Extract text from delta
+		if sseEvent.Delta != nil {
+			var delta anthropicDelta
+			if err := json.Unmarshal(sseEvent.Delta, &delta); err != nil {
+				continue // Skip malformed delta
 			}
 
-			// Only process content_block_delta events
-			if eventType == "content_block_delta" {
-				var event anthropicSSEEvent
-				if err := json.Unmarshal([]byte(data), &event); err != nil {
-					continue // Skip malformed JSON
-				}
-
-				// Extract text from delta
-				if event.Delta != nil {
-					var delta anthropicDelta
-					if err := json.Unmarshal(event.Delta, &delta); err != nil {
-						continue // Skip malformed delta
-					}
-
-					if delta.Text != "" {
-						select {
-						case stream <- delta.Text:
-						case <-ctx.Done():
-							return ctx.Err()
-						}
-					}
+			if delta.Text != "" {
+				select {
+				case stream <- delta.Text:
+				case <-ctx.Done():
+					return ctx.Err()
 				}
 			}
 		}
-
-		// Empty line marks end of an event
-		if line == "" {
-			eventType = ""
-		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return fmt.Errorf("error reading stream: %w", err)
-	}
-
-	return nil
+	return <-errCh
 }

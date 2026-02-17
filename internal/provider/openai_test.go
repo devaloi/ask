@@ -128,13 +128,13 @@ func TestOpenAI_Chat_HTTPErrors(t *testing.T) {
 			name:           "401 Unauthorized",
 			statusCode:     http.StatusUnauthorized,
 			responseBody:   `{"error": {"message": "Invalid API key"}}`,
-			expectedErrMsg: "Invalid API key",
+			expectedErrMsg: "invalid API key",
 		},
 		{
 			name:           "429 Rate Limited",
 			statusCode:     http.StatusTooManyRequests,
 			responseBody:   `{"error": {"message": "Rate limit exceeded"}}`,
-			expectedErrMsg: "Rate limited",
+			expectedErrMsg: "rate limited",
 		},
 		{
 			name:           "500 Server Error",
@@ -522,9 +522,9 @@ func TestOpenAI_Chat_DoneSentinelTerminatesStream(t *testing.T) {
 // TestOpenAI_Chat_StreamChannelClosed verifies that the stream channel is closed after completion.
 func TestOpenAI_Chat_StreamChannelClosed(t *testing.T) {
 	tests := []struct {
-		name       string
-		handler    http.HandlerFunc
-		expectErr  bool
+		name      string
+		handler   http.HandlerFunc
+		expectErr bool
 	}{
 		{
 			name: "successful completion",
@@ -654,9 +654,9 @@ func TestOpenAI_Chat_TokenOrder(t *testing.T) {
 // TestOpenAI_Chat_RequestBody verifies the request body is correctly formatted.
 func TestOpenAI_Chat_RequestBody(t *testing.T) {
 	tests := []struct {
-		name        string
-		request     *ChatRequest
-		checkBody   func(t *testing.T, body string)
+		name      string
+		request   *ChatRequest
+		checkBody func(t *testing.T, body string)
 	}{
 		{
 			name: "basic request",

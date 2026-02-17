@@ -1,14 +1,14 @@
 package provider
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+
+	"github.com/devaloi/ask/internal/sse"
 )
 
 const defaultOpenAIBaseURL = "https://api.openai.com/v1/chat/completions"
@@ -122,12 +122,12 @@ func (o *OpenAI) handleHTTPError(resp *http.Response) error {
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
-		return fmt.Errorf("Invalid API key. Check your OPENAI_API_KEY.")
+		return fmt.Errorf("invalid API key: check your OPENAI_API_KEY")
 	case http.StatusTooManyRequests:
-		return fmt.Errorf("Rate limited. Please wait and try again.")
+		return fmt.Errorf("rate limited: please wait and try again")
 	default:
 		if resp.StatusCode >= 500 {
-			return fmt.Errorf("OpenAI service error. Please try again later.")
+			return fmt.Errorf("OpenAI service error: please try again later")
 		}
 		return fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(body))
 	}
@@ -135,37 +135,24 @@ func (o *OpenAI) handleHTTPError(resp *http.Response) error {
 
 // parseSSEStream reads the SSE stream and sends tokens to the channel.
 func (o *OpenAI) parseSSEStream(ctx context.Context, body io.Reader, stream chan<- string) error {
-	scanner := bufio.NewScanner(body)
+	reader := sse.NewReader(ctx, body)
+	events := make(chan sse.Event, 100)
 
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- reader.Read(events)
+		close(events)
+	}()
 
-		line := scanner.Text()
-
-		// Skip empty lines and comments
-		if line == "" || strings.HasPrefix(line, ":") {
-			continue
-		}
-
-		// SSE data lines start with "data: "
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		data := strings.TrimPrefix(line, "data: ")
-
+	for event := range events {
 		// Check for the [DONE] sentinel
-		if data == "[DONE]" {
+		if event.Data == "[DONE]" {
 			return nil
 		}
 
 		var chunk openAIStreamResponse
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
+		if err := json.Unmarshal([]byte(event.Data), &chunk); err != nil {
+			continue // Skip malformed JSON
 		}
 
 		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
@@ -177,12 +164,5 @@ func (o *OpenAI) parseSSEStream(ctx context.Context, body io.Reader, stream chan
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return fmt.Errorf("error reading stream: %w", err)
-	}
-
-	return nil
+	return <-errCh
 }

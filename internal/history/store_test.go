@@ -392,8 +392,8 @@ func TestListConversations_EmptyDatabase(t *testing.T) {
 		t.Fatalf("ListConversations failed: %v", err)
 	}
 
-	if conversations != nil && len(conversations) != 0 {
-		t.Errorf("expected empty/nil slice, got %d conversations", len(conversations))
+	if len(conversations) != 0 {
+		t.Errorf("expected empty slice, got %d conversations", len(conversations))
 	}
 }
 

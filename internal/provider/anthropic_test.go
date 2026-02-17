@@ -205,13 +205,13 @@ func TestAnthropicChatHTTPErrors(t *testing.T) {
 			name:           "unauthorized",
 			statusCode:     http.StatusUnauthorized,
 			responseBody:   `{"error":{"message":"Invalid API Key"}}`,
-			wantErrContain: "Invalid API key",
+			wantErrContain: "invalid API key",
 		},
 		{
 			name:           "rate_limited",
 			statusCode:     http.StatusTooManyRequests,
 			responseBody:   `{"error":{"message":"Rate limit exceeded"}}`,
-			wantErrContain: "Rate limited",
+			wantErrContain: "rate limited",
 		},
 		{
 			name:           "server_error",
