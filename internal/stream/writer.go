@@ -2,7 +2,9 @@
 package stream
 
 import (
+	"fmt"
 	"io"
+	"os"
 )
 
 // Writer handles streaming output to the terminal.
@@ -33,7 +35,9 @@ func (w *Writer) Write(token string) error {
 func (w *Writer) Flush() {
 	if !w.isTTY {
 		// For piped output, ensure there's a trailing newline
-		_, _ = io.WriteString(w.out, "\n")
+		if _, err := io.WriteString(w.out, "\n"); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to write trailing newline: %v\n", err)
+		}
 	}
 }
 

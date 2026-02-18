@@ -8,6 +8,7 @@ import (
 
 	"github.com/devaloi/ask/internal/config"
 	"github.com/devaloi/ask/internal/history"
+	"github.com/devaloi/ask/internal/util"
 )
 
 var (
@@ -28,19 +29,19 @@ Use --limit to control how many results to show.`,
 func init() {
 	rootCmd.AddCommand(historyCmd)
 	historyCmd.Flags().StringVar(&searchFlag, "search", "", "Search conversations by content")
-	historyCmd.Flags().IntVar(&limitFlag, "limit", 20, "Maximum number of results")
+	historyCmd.Flags().IntVar(&limitFlag, "limit", util.DefaultHistoryLimit, "Maximum number of results")
 }
 
 func runHistory(cmd *cobra.Command, args []string) error {
 	store, err := getStore()
 	if err != nil {
-		return err
+		return fmt.Errorf("opening history store: %w", err)
 	}
 	defer store.Close()
 
 	conversations, err := store.ListConversations(limitFlag, searchFlag)
 	if err != nil {
-		return fmt.Errorf("failed to list conversations: %w", err)
+		return fmt.Errorf("listing conversations: %w", err)
 	}
 
 	if len(conversations) == 0 {
@@ -57,19 +58,12 @@ func runHistory(cmd *cobra.Command, args []string) error {
 
 	for _, conv := range conversations {
 		date := conv.CreatedAt.Format("Jan 02 2006")
-		model := truncateString(conv.Model, 21)
-		title := truncateString(conv.Title, 40)
+		model := util.Truncate(conv.Model, util.MaxModelDisplay)
+		title := util.Truncate(conv.Title, util.MaxTitleDisplay)
 		fmt.Printf("%-4d  %-21s  %-11s  %s\n", conv.ID, model, date, title)
 	}
 
 	return nil
-}
-
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
 }
 
 func getStore() (*history.Store, error) {

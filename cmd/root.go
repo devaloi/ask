@@ -2,6 +2,9 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/spf13/cobra"
 
 	"github.com/devaloi/ask/internal/config"
@@ -57,7 +60,7 @@ func initConfig() {
 	var err error
 	cfg, err = config.Load()
 	if err != nil {
-		// Config loading errors are handled later when the config is actually used
+		fmt.Fprintf(os.Stderr, "warning: config load failed: %v, using defaults\n", err)
 		cfg = config.DefaultConfig()
 	}
 }

@@ -4,8 +4,9 @@ package history
 import (
 	"database/sql"
 	"fmt"
-	"strings"
 	"time"
+
+	"github.com/devaloi/ask/internal/util"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -74,7 +75,7 @@ func (s *Store) SaveConversation(conv *Conversation) (int64, error) {
 			// Auto-generate title from first user message
 			for _, msg := range conv.Messages {
 				if msg.Role == "user" {
-					title = truncateTitle(msg.Content, 50)
+					title = util.Truncate(msg.Content, util.MaxTitleLength)
 					break
 				}
 			}
@@ -193,16 +194,4 @@ func (s *Store) GetConversation(id int64) (*Conversation, error) {
 	}
 
 	return conv, rows.Err()
-}
-
-// truncateTitle truncates a string to maxLen, adding "..." if truncated.
-func truncateTitle(s string, maxLen int) string {
-	// Remove newlines and extra whitespace
-	s = strings.Join(strings.Fields(s), " ")
-
-	if len(s) <= maxLen {
-		return s
-	}
-
-	return s[:maxLen-3] + "..."
 }

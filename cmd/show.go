@@ -28,13 +28,13 @@ func runShow(cmd *cobra.Command, args []string) error {
 
 	store, err := getStore()
 	if err != nil {
-		return err
+		return fmt.Errorf("opening history store: %w", err)
 	}
 	defer store.Close()
 
 	conv, err := store.GetConversation(id)
 	if err != nil {
-		return err
+		return fmt.Errorf("loading conversation %d: %w", id, err)
 	}
 
 	fmt.Printf("Conversation #%d: %s\n", conv.ID, conv.Title)

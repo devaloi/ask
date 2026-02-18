@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/devaloi/ask/internal/util"
 )
 
 func TestNewStore(t *testing.T) {
@@ -569,7 +571,7 @@ func TestMessagesChronologicalOrder(t *testing.T) {
 	}
 }
 
-func TestTruncateTitle(t *testing.T) {
+func TestTruncate(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -640,9 +642,9 @@ func TestTruncateTitle(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := truncateTitle(tt.input, tt.maxLen)
+			result := util.Truncate(tt.input, tt.maxLen)
 			if result != tt.expected {
-				t.Errorf("truncateTitle(%q, %d) = %q, want %q", tt.input, tt.maxLen, result, tt.expected)
+				t.Errorf("Truncate(%q, %d) = %q, want %q", tt.input, tt.maxLen, result, tt.expected)
 			}
 		})
 	}

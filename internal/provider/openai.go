@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/devaloi/ask/internal/sse"
+	"github.com/devaloi/ask/internal/util"
 )
 
 const defaultOpenAIBaseURL = "https://api.openai.com/v1/chat/completions"
@@ -118,7 +119,10 @@ func (o *OpenAI) Chat(ctx context.Context, req *ChatRequest, stream chan<- strin
 
 // handleHTTPError returns an appropriate error message based on the HTTP status code.
 func (o *OpenAI) handleHTTPError(resp *http.Response) error {
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("OpenAI API error (status %d): failed to read response body: %w", resp.StatusCode, err)
+	}
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
@@ -136,7 +140,7 @@ func (o *OpenAI) handleHTTPError(resp *http.Response) error {
 // parseSSEStream reads the SSE stream and sends tokens to the channel.
 func (o *OpenAI) parseSSEStream(ctx context.Context, body io.Reader, stream chan<- string) error {
 	reader := sse.NewReader(ctx, body)
-	events := make(chan sse.Event, 100)
+	events := make(chan sse.Event, util.DefaultChannelBuffer)
 
 	errCh := make(chan error, 1)
 	go func() {

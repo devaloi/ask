@@ -16,6 +16,7 @@ import (
 	"github.com/devaloi/ask/internal/history"
 	"github.com/devaloi/ask/internal/provider"
 	"github.com/devaloi/ask/internal/stream"
+	"github.com/devaloi/ask/internal/util"
 )
 
 var continueFlag int64
@@ -42,7 +43,7 @@ func runOneShot(args []string) error {
 	// Build prompt from args and stdin
 	prompt, err := buildPrompt(args)
 	if err != nil {
-		return err
+		return fmt.Errorf("building prompt: %w", err)
 	}
 
 	if strings.TrimSpace(prompt) == "" && continueFlag == 0 {
@@ -52,14 +53,14 @@ func runOneShot(args []string) error {
 	// Get system prompt if specified
 	systemPrompt, err := resolveSystemPrompt(systemFlag)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolving system prompt: %w", err)
 	}
 
 	// Create provider
 	providerName := getProvider()
 	p, err := provider.New(providerName, cfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating provider: %w", err)
 	}
 
 	// Build messages - either new or from continued conversation
@@ -70,13 +71,13 @@ func runOneShot(args []string) error {
 		// Load previous conversation
 		store, err := openStore()
 		if err != nil {
-			return err
+			return fmt.Errorf("opening history store: %w", err)
 		}
 		defer store.Close()
 
 		conv, err = store.GetConversation(continueFlag)
 		if err != nil {
-			return err
+			return fmt.Errorf("loading conversation %d: %w", continueFlag, err)
 		}
 
 		// Convert history messages to provider messages
@@ -105,7 +106,7 @@ func runOneShot(args []string) error {
 	}
 
 	// Create stream channel
-	tokens := make(chan string, 100)
+	tokens := make(chan string, util.DefaultChannelBuffer)
 
 	// Create writer
 	stdoutIsTerminal := term.IsTerminal(int(os.Stdout.Fd()))
@@ -129,7 +130,7 @@ func runOneShot(args []string) error {
 
 	// Check for errors from provider
 	if err := <-errCh; err != nil {
-		return err
+		return fmt.Errorf("chat stream: %w", err)
 	}
 
 	// Save to history if TTY (don't save when piped)
@@ -328,7 +329,7 @@ func runInteractive() error {
 		}
 
 		// Stream response
-		tokens := make(chan string, 100)
+		tokens := make(chan string, util.DefaultChannelBuffer)
 		errCh := make(chan error, 1)
 
 		go func() {
@@ -372,10 +373,10 @@ func runInteractive() error {
 		}
 
 		if store, err := openStore(); err == nil {
+			defer store.Close()
 			if id, err := store.SaveConversation(conv); err == nil && conv.ID == 0 {
 				conv.ID = id
 			}
-			store.Close()
 		}
 	}
 }

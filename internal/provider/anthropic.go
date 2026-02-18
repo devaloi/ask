@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/devaloi/ask/internal/sse"
+	"github.com/devaloi/ask/internal/util"
 )
 
 const (
@@ -160,7 +161,10 @@ func (a *Anthropic) handleHTTPError(resp *http.Response) error {
 			return fmt.Errorf("Anthropic service error: please try again later")
 		}
 		// Read error body for other errors
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("Anthropic API error (status %d): failed to read response body: %w", resp.StatusCode, err)
+		}
 		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
 }
@@ -168,7 +172,7 @@ func (a *Anthropic) handleHTTPError(resp *http.Response) error {
 // parseSSEStream parses the SSE stream from the Anthropic API and sends tokens to the channel.
 func (a *Anthropic) parseSSEStream(ctx context.Context, body io.Reader, stream chan<- string) error {
 	reader := sse.NewReader(ctx, body)
-	events := make(chan sse.Event, 100)
+	events := make(chan sse.Event, util.DefaultChannelBuffer)
 
 	errCh := make(chan error, 1)
 	go func() {
