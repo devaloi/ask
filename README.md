@@ -2,7 +2,8 @@
 
 A multi-provider LLM CLI for conversational AI from the terminal.
 
-[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev)
+[![CI](https://github.com/devaloi/ask/actions/workflows/ci.yml/badge.svg)](https://github.com/devaloi/ask/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Stream responses from OpenAI or Anthropic directly in your terminal. Pipe in code for review, start interactive sessions, and browse your conversation history.
